@@ -62,15 +62,16 @@ def _reply(token: str, message: dict) -> None:
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "revision": "webhook-200"}
 
 
 @app.post("/callback")
 def callback():
     body = request.get_data()
+    # LINEの「検証」は events が空。署名が無い、または未設定でも 200 を返す。
+    if _is_webhook_check(body):
+        return "OK", 200
     signature = request.headers.get("X-Line-Signature", "")
-    if _is_webhook_check(body) and not signature:
-        return "OK"
     if not _verified(body, signature):
         abort(400)
     data = json.loads(body.decode())
