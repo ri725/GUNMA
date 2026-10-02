@@ -19,20 +19,30 @@ app = Flask(__name__)
 
 
 def _secret() -> str:
-    return os.environ.get("LINE_CHANNEL_SECRET", "")
+    return os.environ.get("LINE_CHANNEL_SECRET", "").strip()
 
 
 def _token() -> str:
-    return os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+    return os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
 
 
 def _verified(body: bytes, signature: str) -> bool:
     secret = _secret()
+    signature = signature.strip()
     if not secret or not signature:
         return False
     digest = hmac.new(secret.encode(), body, hashlib.sha256).digest()
     expected = base64.b64encode(digest).decode()
     return hmac.compare_digest(expected, signature)
+
+
+def _is_webhook_check(body: bytes) -> bool:
+    try:
+        data = json.loads(body.decode())
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    events = data.get("events") if isinstance(data, dict) else None
+    return isinstance(events, list) and len(events) == 0
 
 
 def _reply(token: str, message: dict) -> None:
@@ -58,7 +68,10 @@ def health():
 @app.post("/callback")
 def callback():
     body = request.get_data()
-    if not _verified(body, request.headers.get("X-Line-Signature", "")):
+    signature = request.headers.get("X-Line-Signature", "")
+    if _is_webhook_check(body) and not signature:
+        return "OK"
+    if not _verified(body, signature):
         abort(400)
     data = json.loads(body.decode())
     for event in data.get("events", []):
