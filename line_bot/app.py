@@ -6,10 +6,11 @@ import hmac
 import json
 import os
 import urllib.request
+from html import escape
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, abort, request
+from flask import Flask, abort, request, send_from_directory
 
 import logic
 
@@ -63,6 +64,49 @@ def _reply(token: str, message: dict) -> None:
 @app.get("/health")
 def health():
     return {"ok": True, "revision": "webhook-200"}
+
+
+@app.get("/videos/<name>")
+def video_file(name: str):
+    if name not in logic.video_files():
+        abort(404)
+    path = logic.MEDIA / name
+    if not path.is_file():
+        abort(404)
+    mime = "video/mp4" if name.endswith(".mp4") else "image/jpeg"
+    return send_from_directory(logic.MEDIA, name, mimetype=mime, conditional=True)
+
+
+@app.get("/v/<key>")
+def video_page(key: str):
+    video = logic.VIDEOS.get(key)
+    if video is None or not (logic.MEDIA / video["file"]).is_file():
+        abort(404)
+    title = escape(video["title"])
+    poster = f' poster="/videos/{escape(video["poster"])}"' if video.get("poster") else ""
+    page = f"""<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  body {{ margin: 0; background: #111; color: #f5f5f5; font-family: -apple-system, sans-serif; }}
+  main {{ max-width: 480px; margin: 0 auto; }}
+  video {{ width: 100%; background: #000; }}
+  h1 {{ font-size: 1.15rem; font-weight: 600; margin: 16px; }}
+  p {{ margin: 0 16px 24px; line-height: 1.7; }}
+</style>
+</head>
+<body>
+<main>
+  <video controls playsinline preload="metadata"{poster} src="/videos/{escape(video["file"])}"></video>
+  <h1>{title}</h1>
+  <p>操作盤の確認、主軸の固定、ピックの当て方、芯振れの見方までの手順です。</p>
+</main>
+</body>
+</html>"""
+    return page, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 @app.post("/callback")

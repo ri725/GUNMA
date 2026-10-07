@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import os
+import re
 from urllib.parse import parse_qs, urlencode
 
 import store
+
+MEDIA = store.ROOT / "media"
+VIDEOS = {
+    "shinbure": {
+        "file": "shinbure.mp4",
+        "poster": "shinbure.jpg",
+        "title": "ドリルの芯振れの確認",
+    },
+}
+_VIDEO_LINE = re.compile(r"^動画:[ \t]*([A-Za-z0-9_-]+)[ \t]*$", re.MULTILINE)
 
 MENUS = ("よくある質問", "機械が止まった", "合否の判断", "その他")
 PROMPTS = {
@@ -62,11 +74,41 @@ def _answer_message(category: str, kind: str, source_text: str) -> dict:
     return _text(body)
 
 
+def public_base() -> str:
+    base = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if base:
+        return base
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+    if domain:
+        return f"https://{domain}"
+    return "http://localhost:8000"
+
+
+def video_files() -> set[str]:
+    names = set()
+    for video in VIDEOS.values():
+        names.add(video["file"])
+        poster = video.get("poster", "")
+        if poster:
+            names.add(poster)
+    return names
+
+
 def _render(item: store.Item) -> str:
-    text = item.answer
+    text = _attach_video_links(item.answer)
     if item.after == "送ったあと本人に知らせる":
         text += "\n\n最終判断は担当者に確認してください。"
     return text
+
+
+def _attach_video_links(text: str) -> str:
+    def replace(match: re.Match) -> str:
+        key = match.group(1)
+        if key not in VIDEOS:
+            return match.group(0)
+        return f"動画\n{public_base()}/v/{key}"
+
+    return _VIDEO_LINE.sub(replace, text)
 
 
 def _unique_kind(text: str) -> tuple[str, str] | None:
